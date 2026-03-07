@@ -24,7 +24,8 @@ const MIME_TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
   '.pdf': 'application/pdf',
   '.doc': 'application/msword',
-  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.docx':
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xls': 'application/vnd.ms-excel',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.zip': 'application/zip',
@@ -37,7 +38,11 @@ function detectMimeType(filePath: string): string {
 }
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string, attachment?: Attachment) => Promise<void>;
+  sendMessage: (
+    jid: string,
+    text: string,
+    attachment?: Attachment,
+  ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -99,7 +104,11 @@ export function startIpcWatcher(deps: IpcDeps): void {
             const filePath = path.join(messagesDir, file);
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-              if (data.type === 'message' && data.chatJid && (data.text || data.filePath)) {
+              if (
+                data.type === 'message' &&
+                data.chatJid &&
+                (data.text || data.filePath)
+              ) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
@@ -112,7 +121,10 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     const groupDir = resolveGroupFolderPath(data.groupFolder);
                     const hostPath = path.resolve(groupDir, data.filePath);
                     // Prevent path traversal: resolved path must stay within group folder
-                    if (!hostPath.startsWith(groupDir + path.sep) && hostPath !== groupDir) {
+                    if (
+                      !hostPath.startsWith(groupDir + path.sep) &&
+                      hostPath !== groupDir
+                    ) {
                       logger.warn(
                         { hostPath, groupDir, sourceGroup },
                         'IPC attachment path traversal blocked',
@@ -130,9 +142,17 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     }
                   }
 
-                  await deps.sendMessage(data.chatJid, data.text || '', attachment);
+                  await deps.sendMessage(
+                    data.chatJid,
+                    data.text || '',
+                    attachment,
+                  );
                   logger.info(
-                    { chatJid: data.chatJid, sourceGroup, hasAttachment: !!attachment },
+                    {
+                      chatJid: data.chatJid,
+                      sourceGroup,
+                      hasAttachment: !!attachment,
+                    },
                     'IPC message sent',
                   );
                 } else {
