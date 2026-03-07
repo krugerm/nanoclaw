@@ -142,6 +142,7 @@ function setupLaunchd(
     STATUS: 'success',
     LOG: 'logs/setup.log',
   });
+
 }
 
 function setupLinux(
