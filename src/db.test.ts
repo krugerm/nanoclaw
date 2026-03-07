@@ -334,8 +334,8 @@ describe('storeChatMetadata', () => {
 // --- Task CRUD ---
 
 describe('task CRUD', () => {
-  it('creates and retrieves a task', () => {
-    createTask({
+  it('creates and retrieves a task', async () => {
+    await createTask({
       id: 'task-1',
       group_folder: 'main',
       chat_jid: 'group@g.us',
@@ -348,14 +348,14 @@ describe('task CRUD', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    const task = getTaskById('task-1');
+    const task = await getTaskById('task-1');
     expect(task).toBeDefined();
     expect(task!.prompt).toBe('do something');
     expect(task!.status).toBe('active');
   });
 
-  it('updates task status', () => {
-    createTask({
+  it('updates task status', async () => {
+    await createTask({
       id: 'task-2',
       group_folder: 'main',
       chat_jid: 'group@g.us',
@@ -368,12 +368,12 @@ describe('task CRUD', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    updateTask('task-2', { status: 'paused' });
-    expect(getTaskById('task-2')!.status).toBe('paused');
+    await updateTask('task-2', { status: 'paused' });
+    expect((await getTaskById('task-2'))!.status).toBe('paused');
   });
 
-  it('deletes a task and its run logs', () => {
-    createTask({
+  it('deletes a task and its run logs', async () => {
+    await createTask({
       id: 'task-3',
       group_folder: 'main',
       chat_jid: 'group@g.us',
@@ -386,8 +386,8 @@ describe('task CRUD', () => {
       created_at: '2024-01-01T00:00:00.000Z',
     });
 
-    deleteTask('task-3');
-    expect(getTaskById('task-3')).toBeUndefined();
+    await deleteTask('task-3');
+    expect(await getTaskById('task-3')).toBeUndefined();
   });
 });
 

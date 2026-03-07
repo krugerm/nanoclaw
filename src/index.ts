@@ -201,6 +201,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   };
 
   await channel.setTyping?.(chatJid, true);
+  if (!isMainGroup) {
+    await channel.sendMessage(chatJid, 'Working on it...').catch((err) =>
+      logger.warn({ chatJid, err }, 'Failed to send acknowledgment'),
+    );
+  }
   let hadError = false;
   let outputSentToUser = false;
 
@@ -267,7 +272,7 @@ async function runAgent(
   const sessionId = sessions[group.folder];
 
   // Update tasks snapshot for container to read (filtered by group)
-  const tasks = getAllTasks();
+  const tasks = await getAllTasks();
   writeTasksSnapshot(
     group.folder,
     isMain,
