@@ -37,8 +37,10 @@ export interface WhatsAppChannelOpts {
   registeredGroups: () => Record<string, RegisteredGroup>;
 }
 
-
-function buildMediaMessage(caption: string, attachment: Attachment): AnyMessageContent {
+function buildMediaMessage(
+  caption: string,
+  attachment: Attachment,
+): AnyMessageContent {
   const buffer = fs.readFileSync(attachment.filePath);
   const mime = attachment.mimeType;
   const fileName = path.basename(attachment.filePath);
@@ -53,7 +55,12 @@ function buildMediaMessage(caption: string, attachment: Attachment): AnyMessageC
     return { audio: buffer, mimetype: mime };
   }
   // Everything else as document
-  return { document: buffer, fileName, caption: caption || undefined, mimetype: mime };
+  return {
+    document: buffer,
+    fileName,
+    caption: caption || undefined,
+    mimetype: mime,
+  };
 }
 
 export class WhatsAppChannel implements Channel {
@@ -62,7 +69,11 @@ export class WhatsAppChannel implements Channel {
   private sock!: WASocket;
   private connected = false;
   private lidToPhoneMap: Record<string, string> = {};
-  private outgoingQueue: Array<{ jid: string; text: string; attachment?: Attachment }> = [];
+  private outgoingQueue: Array<{
+    jid: string;
+    text: string;
+    attachment?: Attachment;
+  }> = [];
   private flushing = false;
   private groupSyncTimerStarted = false;
 
@@ -267,19 +278,30 @@ export class WhatsAppChannel implements Channel {
     });
   }
 
-  async sendMessage(jid: string, text: string, attachment?: Attachment): Promise<void> {
+  async sendMessage(
+    jid: string,
+    text: string,
+    attachment?: Attachment,
+  ): Promise<void> {
     // Prefix bot messages with assistant name so users know who's speaking.
     // On a shared number, prefix is also needed in DMs (including self-chat)
     // to distinguish bot output from user messages.
     // Skip only when the assistant has its own dedicated phone number.
     const prefixed = ASSISTANT_HAS_OWN_NUMBER
       ? text
-      : text ? `${ASSISTANT_NAME}: ${text}` : '';
+      : text
+        ? `${ASSISTANT_NAME}: ${text}`
+        : '';
 
     if (!this.connected) {
       this.outgoingQueue.push({ jid, text: prefixed, attachment });
       logger.info(
-        { jid, length: prefixed.length, queueSize: this.outgoingQueue.length, hasAttachment: !!attachment },
+        {
+          jid,
+          length: prefixed.length,
+          queueSize: this.outgoingQueue.length,
+          hasAttachment: !!attachment,
+        },
         'WA disconnected, message queued',
       );
       return;
@@ -289,8 +311,15 @@ export class WhatsAppChannel implements Channel {
         const msg = buildMediaMessage(prefixed, attachment);
         await this.sock.sendMessage(jid, msg);
         // Clean up attachment file after successful send
-        try { fs.unlinkSync(attachment.filePath); } catch { /* ignore */ }
-        logger.info({ jid, mimeType: attachment.mimeType }, 'Media message sent');
+        try {
+          fs.unlinkSync(attachment.filePath);
+        } catch {
+          /* ignore */
+        }
+        logger.info(
+          { jid, mimeType: attachment.mimeType },
+          'Media message sent',
+        );
       } else {
         await this.sock.sendMessage(jid, { text: prefixed });
         logger.info({ jid, length: prefixed.length }, 'Message sent');
@@ -414,7 +443,11 @@ export class WhatsAppChannel implements Channel {
         if (item.attachment) {
           const msg = buildMediaMessage(item.text, item.attachment);
           await this.sock.sendMessage(item.jid, msg);
-          try { fs.unlinkSync(item.attachment.filePath); } catch { /* ignore */ }
+          try {
+            fs.unlinkSync(item.attachment.filePath);
+          } catch {
+            /* ignore */
+          }
           logger.info(
             { jid: item.jid, mimeType: item.attachment.mimeType },
             'Queued media message sent',
