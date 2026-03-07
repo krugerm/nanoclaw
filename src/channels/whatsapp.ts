@@ -7,6 +7,7 @@ import makeWASocket, {
   Browsers,
   DisconnectReason,
   WASocket,
+  downloadMediaMessage,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
@@ -16,10 +17,20 @@ import makeWASocket, {
 import {
   ASSISTANT_HAS_OWN_NUMBER,
   ASSISTANT_NAME,
+  GROUPS_DIR,
   STORE_DIR,
 } from '../config.js';
 import { getLastGroupSync, setLastGroupSync, updateChatName } from '../db.js';
 import { logger } from '../logger.js';
+import {
+  hasAudioMessage,
+  hasDocumentMessage,
+  hasImageMessage,
+  hasStickerMessage,
+  hasVideoMessage,
+  processImage,
+  saveAttachment,
+} from '../media.js';
 import {
   Attachment,
   Channel,
@@ -235,12 +246,139 @@ export class WhatsAppChannel implements Channel {
           // Only deliver full message for registered groups
           const groups = this.opts.registeredGroups();
           if (groups[chatJid]) {
-            const content =
+            let content =
               normalized.conversation ||
               normalized.extendedTextMessage?.text ||
-              normalized.imageMessage?.caption ||
-              normalized.videoMessage?.caption ||
+              (normalized.imageMessage as { caption?: string })?.caption ||
+              (normalized.videoMessage as { caption?: string })?.caption ||
+              (normalized.documentMessage as { caption?: string })?.caption ||
               '';
+
+            const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
+
+            // Image (jpg, png, gif, webp)
+            if (hasImageMessage(normalized)) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const caption =
+                  (normalized.imageMessage as { caption?: string })?.caption ??
+                  '';
+                const result = await processImage(
+                  buffer as Buffer,
+                  groupDir,
+                  caption,
+                );
+                if (result) content = result.content;
+              } catch (err) {
+                logger.warn({ err, jid: chatJid }, 'Failed to download image');
+              }
+            }
+
+            // Document (PDF, doc, xlsx, txt, etc.)
+            else if (hasDocumentMessage(normalized)) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const docMsg = normalized.documentMessage as {
+                  fileName?: string;
+                  mimetype?: string;
+                  caption?: string;
+                };
+                const filename =
+                  docMsg.fileName || `doc-${Date.now()}`;
+                const mimeType = docMsg.mimetype || 'application/octet-stream';
+                const isPdf = mimeType === 'application/pdf';
+                const fileType = isPdf ? 'PDF' : 'Document';
+                const hint = isPdf
+                  ? `Use: pdf-reader extract attachments/${path.basename(filename)}`
+                  : undefined;
+                const result = saveAttachment(
+                  buffer as Buffer,
+                  groupDir,
+                  filename,
+                  mimeType,
+                  docMsg.caption || '',
+                  fileType,
+                  hint,
+                );
+                if (result) content = result.content;
+              } catch (err) {
+                logger.warn(
+                  { err, jid: chatJid },
+                  'Failed to download document',
+                );
+              }
+            }
+
+            // Audio / voice note
+            else if (hasAudioMessage(normalized)) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const audioMsg = normalized.audioMessage as {
+                  ptt?: boolean;
+                  mimetype?: string;
+                };
+                const isVoice = audioMsg.ptt === true;
+                const mime = audioMsg.mimetype || 'audio/ogg';
+                const ext = mime.includes('ogg')
+                  ? 'ogg'
+                  : mime.includes('mp3')
+                    ? 'mp3'
+                    : 'wav';
+                const filename = `${isVoice ? 'voice' : 'audio'}-${Date.now()}.${ext}`;
+                const result = saveAttachment(
+                  buffer as Buffer,
+                  groupDir,
+                  filename,
+                  mime,
+                  '',
+                  isVoice ? 'Voice' : 'Audio',
+                );
+                if (result) content = result.content;
+              } catch (err) {
+                logger.warn({ err, jid: chatJid }, 'Failed to download audio');
+              }
+            }
+
+            // Video
+            else if (hasVideoMessage(normalized)) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const videoMsg = normalized.videoMessage as {
+                  caption?: string;
+                  mimetype?: string;
+                };
+                const filename = `video-${Date.now()}.mp4`;
+                const result = saveAttachment(
+                  buffer as Buffer,
+                  groupDir,
+                  filename,
+                  videoMsg.mimetype || 'video/mp4',
+                  videoMsg.caption || '',
+                  'Video',
+                );
+                if (result) content = result.content;
+              } catch (err) {
+                logger.warn({ err, jid: chatJid }, 'Failed to download video');
+              }
+            }
+
+            // Sticker (treat as image)
+            else if (hasStickerMessage(normalized)) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const result = await processImage(
+                  buffer as Buffer,
+                  groupDir,
+                  '[sticker]',
+                );
+                if (result) content = result.content;
+              } catch (err) {
+                logger.warn(
+                  { err, jid: chatJid },
+                  'Failed to download sticker',
+                );
+              }
+            }
 
             // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
             if (!content) continue;
