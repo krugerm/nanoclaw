@@ -369,6 +369,8 @@ export async function createTask(
 ): Promise<void> {
   const { error } = await supabase.from('agents').insert({
     id: task.id,
+    name: task.name || task.prompt.slice(0, 80),
+    type: task.type || 'message',
     group_folder: task.group_folder,
     chat_jid: task.chat_jid,
     prompt: task.prompt,
@@ -434,10 +436,7 @@ export async function updateTask(
   >,
 ): Promise<void> {
   if (Object.keys(updates).length === 0) return;
-  const { error } = await supabase
-    .from('agents')
-    .update(updates)
-    .eq('id', id);
+  const { error } = await supabase.from('agents').update(updates).eq('id', id);
   if (error) logger.error({ error, taskId: id }, 'Failed to update task');
 }
 
@@ -493,6 +492,34 @@ export async function logTaskRun(log: TaskRunLog): Promise<void> {
   });
   if (error)
     logger.error({ error, taskId: log.task_id }, 'Failed to log task run');
+}
+
+export async function logTaskRunReturningId(log: TaskRunLog): Promise<number | null> {
+  const { data, error } = await supabase.from('agent_runs').insert({
+    agent_id: log.task_id,
+    run_at: log.run_at,
+    duration_ms: log.duration_ms,
+    status: log.status,
+    result: log.result,
+    error: log.error,
+  }).select('id').single();
+  if (error) {
+    logger.error({ error, taskId: log.task_id }, 'Failed to log task run');
+    return null;
+  }
+  return data.id;
+}
+
+export async function insertRunFile(file: {
+  run_id: number;
+  agent_id: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number;
+  storage_path: string;
+}): Promise<void> {
+  const { error } = await supabase.from('agent_run_files').insert(file);
+  if (error) logger.error({ error, runId: file.run_id }, 'Failed to insert run file');
 }
 
 // --- Router state accessors ---

@@ -186,6 +186,15 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Per-group output directory for run output files (uploaded after task completion)
+  const groupOutputDir = path.join(DATA_DIR, 'sessions', group.folder, 'output');
+  fs.mkdirSync(groupOutputDir, { recursive: true });
+  mounts.push({
+    hostPath: groupOutputDir,
+    containerPath: '/workspace/output',
+    readonly: false,
+  });
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(

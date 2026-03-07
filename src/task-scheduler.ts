@@ -1,8 +1,9 @@
 import { ChildProcess } from 'child_process';
 import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
+import path from 'path';
 
-import { ASSISTANT_NAME, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
+import { ASSISTANT_NAME, DATA_DIR, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -12,13 +13,16 @@ import {
   getAllTasks,
   getDueTasks,
   getTaskById,
+  insertRunFile,
   logTaskRun,
+  logTaskRunReturningId,
   updateTask,
   updateTaskAfterRun,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
+import { supabase } from './supabase.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
 
 /**
@@ -60,6 +64,75 @@ export function computeNextRun(task: ScheduledTask): string | null {
   }
 
   return null;
+}
+
+function getMimeType(ext: string): string | null {
+  const mimeTypes: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.html': 'text/html',
+    '.csv': 'text/csv',
+    '.json': 'application/json',
+    '.eml': 'message/rfc822',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.zip': 'application/zip',
+  };
+  return mimeTypes[ext] || null;
+}
+
+async function uploadRunOutputFiles(taskId: string, runId: number, groupFolder: string): Promise<void> {
+  const outputDir = path.join(DATA_DIR, 'sessions', groupFolder, 'output');
+  if (!fs.existsSync(outputDir)) return;
+
+  const files = fs.readdirSync(outputDir);
+  if (files.length === 0) return;
+
+  for (const fileName of files) {
+    const filePath = path.join(outputDir, fileName);
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) continue;
+
+    const fileContent = fs.readFileSync(filePath);
+    const storagePath = `${taskId}/${runId}/${fileName}`;
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeType = getMimeType(ext);
+
+    const { error } = await supabase.storage
+      .from('agent-outputs')
+      .upload(storagePath, fileContent, {
+        contentType: mimeType || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (error) {
+      logger.error({ error, storagePath }, 'Failed to upload run output file');
+      continue;
+    }
+
+    await insertRunFile({
+      run_id: runId,
+      agent_id: taskId,
+      file_name: fileName,
+      mime_type: mimeType,
+      file_size: stat.size,
+      storage_path: storagePath,
+    });
+  }
+
+  // Clean up output directory after successful upload
+  for (const fileName of files) {
+    const filePath = path.join(outputDir, fileName);
+    try { fs.unlinkSync(filePath); } catch {}
+  }
 }
 
 export interface SchedulerDependencies {
@@ -220,7 +293,7 @@ async function runTask(
 
   const durationMs = Date.now() - startTime;
 
-  await logTaskRun({
+  const runId = await logTaskRunReturningId({
     task_id: task.id,
     run_at: new Date().toISOString(),
     duration_ms: durationMs,
@@ -228,6 +301,10 @@ async function runTask(
     result,
     error,
   });
+
+  if (runId && !error) {
+    await uploadRunOutputFiles(task.id, runId, task.group_folder);
+  }
 
   const nextRun = computeNextRun(task);
   const resultSummary = error
