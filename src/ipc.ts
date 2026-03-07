@@ -6,12 +6,38 @@ import { CronExpressionParser } from 'cron-parser';
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
-import { isValidGroupFolder } from './group-folder.js';
+import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
-import { RegisteredGroup } from './types.js';
+import { Attachment, RegisteredGroup } from './types.js';
+
+const MIME_TYPES: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.zip': 'application/zip',
+  '.txt': 'text/plain',
+};
+
+function detectMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[ext] || 'application/octet-stream';
+}
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (jid: string, text: string, attachment?: Attachment) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -73,16 +99,40 @@ export function startIpcWatcher(deps: IpcDeps): void {
             const filePath = path.join(messagesDir, file);
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-              if (data.type === 'message' && data.chatJid && data.text) {
+              if (data.type === 'message' && data.chatJid && (data.text || data.filePath)) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                  // Resolve file attachment if present
+                  let attachment: Attachment | undefined;
+                  if (data.filePath && data.groupFolder) {
+                    const groupDir = resolveGroupFolderPath(data.groupFolder);
+                    const hostPath = path.resolve(groupDir, data.filePath);
+                    // Prevent path traversal: resolved path must stay within group folder
+                    if (!hostPath.startsWith(groupDir + path.sep) && hostPath !== groupDir) {
+                      logger.warn(
+                        { hostPath, groupDir, sourceGroup },
+                        'IPC attachment path traversal blocked',
+                      );
+                    } else if (!fs.existsSync(hostPath)) {
+                      logger.warn(
+                        { hostPath, sourceGroup },
+                        'IPC attachment file not found',
+                      );
+                    } else {
+                      attachment = {
+                        filePath: hostPath,
+                        mimeType: detectMimeType(hostPath),
+                      };
+                    }
+                  }
+
+                  await deps.sendMessage(data.chatJid, data.text || '', attachment);
                   logger.info(
-                    { chatJid: data.chatJid, sourceGroup },
+                    { chatJid: data.chatJid, sourceGroup, hasAttachment: !!attachment },
                     'IPC message sent',
                   );
                 } else {

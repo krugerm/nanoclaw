@@ -41,16 +41,35 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times.",
+  "Send a message to the user or group immediately while you're still running. Use this for progress updates, to send multiple messages, or to send files (images, documents). You can call this multiple times. At least one of text or file must be provided.",
   {
-    text: z.string().describe('The message text to send'),
+    text: z.string().optional().describe('The message text to send (or caption for a file)'),
+    file: z.string().optional().describe('Absolute path to a file under /workspace/group/ to send (e.g. /workspace/group/attachments/image.png)'),
     sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
   },
   async (args) => {
+    if (!args.text && !args.file) {
+      return { content: [{ type: 'text' as const, text: 'Error: at least one of text or file must be provided.' }], isError: true };
+    }
+
+    let filePath: string | undefined;
+    if (args.file) {
+      const groupPrefix = '/workspace/group/';
+      if (!args.file.startsWith(groupPrefix)) {
+        return { content: [{ type: 'text' as const, text: `Error: file must be under ${groupPrefix}` }], isError: true };
+      }
+      if (!fs.existsSync(args.file)) {
+        return { content: [{ type: 'text' as const, text: `Error: file not found: ${args.file}` }], isError: true };
+      }
+      // Store relative path (e.g. "attachments/image.png")
+      filePath = args.file.slice(groupPrefix.length);
+    }
+
     const data: Record<string, string | undefined> = {
       type: 'message',
       chatJid,
-      text: args.text,
+      text: args.text || undefined,
+      filePath,
       sender: args.sender || undefined,
       groupFolder,
       timestamp: new Date().toISOString(),
