@@ -373,7 +373,12 @@ async function runTask(
   // Read any sent message copies from the output directory.
   // The container's send_message tool saves text copies as sent-*.md files
   // so we can capture the full output (not just the final summary).
-  const outputDir = path.join(DATA_DIR, 'sessions', task.group_folder, 'output');
+  const outputDir = path.join(
+    DATA_DIR,
+    'sessions',
+    task.group_folder,
+    'output',
+  );
   if (fs.existsSync(outputDir)) {
     const sentFiles = fs
       .readdirSync(outputDir)
