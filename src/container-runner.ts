@@ -2,7 +2,7 @@
  * Container Runner for NanoClaw
  * Spawns agent execution in containers and handles IPC
  */
-import { ChildProcess, exec, spawn } from 'child_process';
+import { ChildProcess, exec, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -188,7 +188,12 @@ function buildVolumeMounts(
   });
 
   // Per-group output directory for run output files (uploaded after task completion)
-  const groupOutputDir = path.join(DATA_DIR, 'sessions', group.folder, 'output');
+  const groupOutputDir = path.join(
+    DATA_DIR,
+    'sessions',
+    group.folder,
+    'output',
+  );
   fs.mkdirSync(groupOutputDir, { recursive: true });
   mounts.push({
     hostPath: groupOutputDir,
@@ -210,15 +215,45 @@ function buildVolumeMounts(
 }
 
 /**
+ * Read the Claude Code OAuth token from the macOS Keychain.
+ * Claude Code stores { accessToken, refreshToken } in "Claude Code-credentials".
+ * The access token auto-refreshes via the refresh token.
+ */
+function readOAuthTokenFromKeychain(): string | null {
+  try {
+    const result = execSync(
+      'security find-generic-password -s "Claude Code-credentials" -w',
+      { encoding: 'utf-8', timeout: 5000 },
+    ).trim();
+    const parsed = JSON.parse(result);
+    return parsed?.claudeAiOauth?.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
+ * Falls back to macOS Keychain for the OAuth token if not in .env.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile([
+  const secrets = readEnvFile([
     'CLAUDE_CODE_OAUTH_TOKEN',
     'ANTHROPIC_API_KEY',
     'GEMINI_API_KEY',
   ]);
+
+  // If no API key or OAuth token in .env, try the macOS Keychain
+  if (!secrets.ANTHROPIC_API_KEY && !secrets.CLAUDE_CODE_OAUTH_TOKEN) {
+    const keychainToken = readOAuthTokenFromKeychain();
+    if (keychainToken) {
+      secrets.CLAUDE_CODE_OAUTH_TOKEN = keychainToken;
+      logger.debug('Using OAuth token from macOS Keychain');
+    }
+  }
+
+  return secrets;
 }
 
 function buildContainerArgs(

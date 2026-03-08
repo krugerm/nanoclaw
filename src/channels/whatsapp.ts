@@ -283,8 +283,7 @@ export class WhatsAppChannel implements Channel {
                   mimetype?: string;
                   caption?: string;
                 };
-                const filename =
-                  docMsg.fileName || `doc-${Date.now()}`;
+                const filename = docMsg.fileName || `doc-${Date.now()}`;
                 const mimeType = docMsg.mimetype || 'application/octet-stream';
                 const isPdf = mimeType === 'application/pdf';
                 const fileType = isPdf ? 'PDF' : 'Document';

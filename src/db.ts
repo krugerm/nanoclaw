@@ -494,15 +494,21 @@ export async function logTaskRun(log: TaskRunLog): Promise<void> {
     logger.error({ error, taskId: log.task_id }, 'Failed to log task run');
 }
 
-export async function logTaskRunReturningId(log: TaskRunLog): Promise<number | null> {
-  const { data, error } = await supabase.from('agent_runs').insert({
-    agent_id: log.task_id,
-    run_at: log.run_at,
-    duration_ms: log.duration_ms,
-    status: log.status,
-    result: log.result,
-    error: log.error,
-  }).select('id').single();
+export async function logTaskRunReturningId(
+  log: TaskRunLog,
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('agent_runs')
+    .insert({
+      agent_id: log.task_id,
+      run_at: log.run_at,
+      duration_ms: log.duration_ms,
+      status: log.status,
+      result: log.result,
+      error: log.error,
+    })
+    .select('id')
+    .single();
   if (error) {
     logger.error({ error, taskId: log.task_id }, 'Failed to log task run');
     return null;
@@ -519,7 +525,8 @@ export async function insertRunFile(file: {
   storage_path: string;
 }): Promise<void> {
   const { error } = await supabase.from('agent_run_files').insert(file);
-  if (error) logger.error({ error, runId: file.run_id }, 'Failed to insert run file');
+  if (error)
+    logger.error({ error, runId: file.run_id }, 'Failed to insert run file');
 }
 
 // --- Router state accessors ---

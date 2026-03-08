@@ -3,7 +3,12 @@ import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
 import path from 'path';
 
-import { ASSISTANT_NAME, DATA_DIR, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
+import {
+  ASSISTANT_NAME,
+  DATA_DIR,
+  SCHEDULER_POLL_INTERVAL,
+  TIMEZONE,
+} from './config.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -81,15 +86,21 @@ function getMimeType(ext: string): string | null {
     '.json': 'application/json',
     '.eml': 'message/rfc822',
     '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.docx':
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     '.xls': 'application/vnd.ms-excel',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xlsx':
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.zip': 'application/zip',
   };
   return mimeTypes[ext] || null;
 }
 
-async function uploadRunOutputFiles(taskId: string, runId: number, groupFolder: string): Promise<void> {
+async function uploadRunOutputFiles(
+  taskId: string,
+  runId: number,
+  groupFolder: string,
+): Promise<void> {
   const outputDir = path.join(DATA_DIR, 'sessions', groupFolder, 'output');
   if (!fs.existsSync(outputDir)) return;
 
@@ -131,7 +142,9 @@ async function uploadRunOutputFiles(taskId: string, runId: number, groupFolder: 
   // Clean up output directory after successful upload
   for (const fileName of files) {
     const filePath = path.join(outputDir, fileName);
-    try { fs.unlinkSync(filePath); } catch {}
+    try {
+      fs.unlinkSync(filePath);
+    } catch {}
   }
 }
 
