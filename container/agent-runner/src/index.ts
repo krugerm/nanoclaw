@@ -495,6 +495,8 @@ async function runQuery(
           args: [],
           env: {
             GEMINI_API_KEY: sdkEnv.GEMINI_API_KEY || '',
+            IMAGE_OUTPUT_DIR: '/workspace/output',
+            RETURN_FULL_IMAGE: 'true',
           },
         },
       },

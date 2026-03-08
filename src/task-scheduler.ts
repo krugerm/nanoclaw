@@ -17,6 +17,7 @@ import {
 } from './container-runner.js';
 import {
   createReviewActivity,
+  createRunFileAttachments,
   getAllTasks,
   getDueTasks,
   getTaskById,
@@ -99,7 +100,6 @@ function getMimeType(ext: string): string | null {
   return mimeTypes[ext] || null;
 }
 
-
 // Known files/dirs in group root that are NOT run output
 const GROUP_SYSTEM_ENTRIES = new Set([
   'CLAUDE.md',
@@ -150,7 +150,10 @@ function collectGroupOutputFiles(
 
       const dstPath = path.join(outputDir, entry);
       fs.renameSync(srcPath, dstPath);
-      logger.debug({ file: entry, groupFolder }, 'Collected output file from group dir');
+      logger.debug(
+        { file: entry, groupFolder },
+        'Collected output file from group dir',
+      );
     } catch (err) {
       logger.warn({ err, file: entry }, 'Failed to collect group output file');
     }
@@ -397,15 +400,18 @@ async function runTask(
     await uploadRunOutputFiles(task.id, runId, task.group_folder);
   }
 
-  // Create CRM review task
+  // Create CRM review task and link file attachments
   if (runId) {
-    await createReviewActivity(
+    const activityId = await createReviewActivity(
       task.name || task.prompt.slice(0, 80),
       runId,
       task.id,
       taskStatus,
       result,
     );
+    if (activityId) {
+      await createRunFileAttachments(activityId, runId);
+    }
   }
 
   const nextRun = computeNextRun(task);

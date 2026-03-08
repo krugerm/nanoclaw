@@ -739,7 +739,7 @@ export async function createReviewActivity(
   agentId: string,
   status: 'success' | 'error',
   resultSnippet: string | null,
-): Promise<void> {
+): Promise<string | null> {
   const dateStr = new Date().toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -751,18 +751,66 @@ export async function createReviewActivity(
     : `Agent run ${status}`;
   const description = `<p>${snippetText}</p><p><a href="/agents/${encodeURIComponent(agentId)}">View agent run details</a></p>`;
 
-  const { error } = await supabaseCrm.from('activities').insert({
-    type: 'task',
-    subject,
-    description,
-    agent_run_id: runId,
-    assigned_to: REVIEW_USER_ID,
-    created_by: REVIEW_USER_ID,
-    due_date: new Date().toISOString(),
-    is_completed: false,
-  });
+  const { data, error } = await supabaseCrm
+    .from('activities')
+    .insert({
+      type: 'task',
+      subject,
+      description,
+      agent_run_id: runId,
+      assigned_to: REVIEW_USER_ID,
+      created_by: REVIEW_USER_ID,
+      due_date: new Date().toISOString(),
+      is_completed: false,
+    })
+    .select('id')
+    .single();
 
   if (error) {
     logger.error({ error, runId }, 'Failed to create review activity');
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
+export async function createRunFileAttachments(
+  activityId: string,
+  runId: number,
+): Promise<void> {
+  // Fetch all files for this run from nanoclaw schema
+  const { data: runFiles, error: fetchErr } = await supabase
+    .from('agent_run_files')
+    .select('file_name, mime_type, file_size, storage_path')
+    .eq('run_id', runId);
+
+  if (fetchErr || !runFiles || runFiles.length === 0) {
+    if (fetchErr)
+      logger.error({ error: fetchErr, runId }, 'Failed to fetch run files');
+    return;
+  }
+
+  const rows = runFiles.map((f) => ({
+    file_name: f.file_name,
+    mime_type: f.mime_type,
+    file_type: f.mime_type,
+    file_extension: f.file_name.includes('.')
+      ? f.file_name.split('.').pop()
+      : null,
+    file_size: f.file_size,
+    storage_path: f.storage_path,
+    activity_id: activityId,
+    created_by: REVIEW_USER_ID,
+  }));
+
+  const { error: insertErr } = await supabaseCrm
+    .from('file_attachments')
+    .insert(rows);
+
+  if (insertErr) {
+    logger.error(
+      { error: insertErr, activityId, runId },
+      'Failed to create CRM file attachments',
+    );
   }
 }
