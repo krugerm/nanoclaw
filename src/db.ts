@@ -5,7 +5,7 @@ import path from 'path';
 import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
-import { supabase } from './supabase.js';
+import { supabase, supabaseCrm } from './supabase.js';
 import {
   NewMessage,
   RegisteredGroup,
@@ -726,5 +726,37 @@ function migrateJsonState(): void {
         );
       }
     }
+  }
+}
+
+// --- CRM review activity ---
+
+const REVIEW_USER_ID = 'a9488d6a-6ef1-49a6-8158-e49daa0d409d'; // mike.kruger@beemotion.ai
+
+export async function createReviewActivity(
+  agentName: string,
+  runId: number,
+  agentId: string,
+  status: 'success' | 'error',
+  resultSnippet: string | null,
+): Promise<void> {
+  const subject = `Review: ${agentName} — ${status}`;
+  const description = resultSnippet
+    ? `${resultSnippet.slice(0, 200)}${resultSnippet.length > 200 ? '...' : ''}`
+    : `Agent run ${status}`;
+
+  const { error } = await supabaseCrm.from('activities').insert({
+    type: 'task',
+    subject,
+    description,
+    agent_run_id: runId,
+    assigned_to: REVIEW_USER_ID,
+    created_by: REVIEW_USER_ID,
+    due_date: new Date().toISOString(),
+    is_completed: false,
+  });
+
+  if (error) {
+    logger.error({ error, runId }, 'Failed to create review activity');
   }
 }

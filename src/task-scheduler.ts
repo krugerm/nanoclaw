@@ -15,6 +15,7 @@ import {
   writeTasksSnapshot,
 } from './container-runner.js';
 import {
+  createReviewActivity,
   getAllTasks,
   getDueTasks,
   getTaskById,
@@ -306,17 +307,38 @@ async function runTask(
 
   const durationMs = Date.now() - startTime;
 
+  const taskStatus = error ? 'error' : 'success';
+
   const runId = await logTaskRunReturningId({
     task_id: task.id,
     run_at: new Date().toISOString(),
     duration_ms: durationMs,
-    status: error ? 'error' : 'success',
+    status: taskStatus,
     result,
     error,
   });
 
+  // Save agent response as markdown file for upload
+  if (result && runId) {
+    const outputDir = path.join(DATA_DIR, 'sessions', task.group_folder, 'output');
+    fs.mkdirSync(outputDir, { recursive: true });
+    const responseFile = path.join(outputDir, `response-${Date.now()}.md`);
+    fs.writeFileSync(responseFile, result);
+  }
+
   if (runId && !error) {
     await uploadRunOutputFiles(task.id, runId, task.group_folder);
+  }
+
+  // Create CRM review task
+  if (runId) {
+    await createReviewActivity(
+      task.name || task.prompt.slice(0, 80),
+      runId,
+      task.id,
+      taskStatus,
+      result,
+    );
   }
 
   const nextRun = computeNextRun(task);
