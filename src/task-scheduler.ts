@@ -6,6 +6,7 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   DATA_DIR,
+  GROUPS_DIR,
   SCHEDULER_POLL_INTERVAL,
   TIMEZONE,
 } from './config.js';
@@ -96,6 +97,64 @@ function getMimeType(ext: string): string | null {
     '.zip': 'application/zip',
   };
   return mimeTypes[ext] || null;
+}
+
+
+// Known files/dirs in group root that are NOT run output
+const GROUP_SYSTEM_ENTRIES = new Set([
+  'CLAUDE.md',
+  '.DS_Store',
+  'attachments',
+  'content',
+  'knowledge',
+  'logs',
+  'outreach',
+  'reports',
+  'tasks',
+  'messages.db',
+  'messages.db-wal',
+  'messages.db-shm',
+]);
+
+/**
+ * Collect files created in the group directory during a run
+ * and move them to the output directory for upload.
+ */
+function collectGroupOutputFiles(
+  groupFolder: string,
+  runStartTime: number,
+): void {
+  const groupDir = path.join(GROUPS_DIR, groupFolder);
+  const outputDir = path.join(DATA_DIR, 'sessions', groupFolder, 'output');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  if (!fs.existsSync(groupDir)) return;
+
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(groupDir);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (GROUP_SYSTEM_ENTRIES.has(entry)) continue;
+    if (entry.startsWith('.')) continue;
+
+    const srcPath = path.join(groupDir, entry);
+    try {
+      const stat = fs.statSync(srcPath);
+      if (!stat.isFile()) continue;
+      // Only collect files created/modified during or after the run
+      if (stat.mtimeMs < runStartTime) continue;
+
+      const dstPath = path.join(outputDir, entry);
+      fs.renameSync(srcPath, dstPath);
+      logger.debug({ file: entry, groupFolder }, 'Collected output file from group dir');
+    } catch (err) {
+      logger.warn({ err, file: entry }, 'Failed to collect group output file');
+    }
+  }
 }
 
 async function uploadRunOutputFiles(
@@ -333,6 +392,8 @@ async function runTask(
   }
 
   if (runId && !error) {
+    // Collect files created in the group dir during this run (e.g. generated images)
+    collectGroupOutputFiles(task.group_folder, startTime);
     await uploadRunOutputFiles(task.id, runId, task.group_folder);
   }
 
