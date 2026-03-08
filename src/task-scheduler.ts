@@ -74,6 +74,7 @@ export function computeNextRun(task: ScheduledTask): string | null {
 
 function getMimeType(ext: string): string | null {
   const mimeTypes: Record<string, string> = {
+    '.md': 'text/markdown',
     '.pdf': 'application/pdf',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -320,7 +321,12 @@ async function runTask(
 
   // Save agent response as markdown file for upload
   if (result && runId) {
-    const outputDir = path.join(DATA_DIR, 'sessions', task.group_folder, 'output');
+    const outputDir = path.join(
+      DATA_DIR,
+      'sessions',
+      task.group_folder,
+      'output',
+    );
     fs.mkdirSync(outputDir, { recursive: true });
     const responseFile = path.join(outputDir, `response-${Date.now()}.md`);
     fs.writeFileSync(responseFile, result);

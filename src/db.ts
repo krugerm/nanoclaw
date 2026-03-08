@@ -740,10 +740,16 @@ export async function createReviewActivity(
   status: 'success' | 'error',
   resultSnippet: string | null,
 ): Promise<void> {
-  const subject = `Review: ${agentName} — ${status}`;
-  const description = resultSnippet
-    ? `${resultSnippet.slice(0, 200)}${resultSnippet.length > 200 ? '...' : ''}`
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const subject = `Review: ${agentName} — ${dateStr}`;
+  const snippetText = resultSnippet
+    ? resultSnippet.slice(0, 200) + (resultSnippet.length > 200 ? '...' : '')
     : `Agent run ${status}`;
+  const description = `<p>${snippetText}</p><p><a href="/agents/${encodeURIComponent(agentId)}">View agent run details</a></p>`;
 
   const { error } = await supabaseCrm.from('activities').insert({
     type: 'task',
