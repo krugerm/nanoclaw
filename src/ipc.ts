@@ -326,6 +326,7 @@ export async function processTaskIpc(
             : 'isolated';
         await createTask({
           id: taskId,
+          name: (data.name as string) || undefined,
           group_folder: targetFolder,
           chat_jid: targetJid,
           prompt: data.prompt,

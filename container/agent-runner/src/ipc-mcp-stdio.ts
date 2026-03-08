@@ -77,7 +77,45 @@ server.tool(
 
     writeIpcFile(MESSAGES_DIR, data);
 
+    // Save text content copy to output directory for host-side capture.
+    // This ensures sent messages are preserved as run output files.
+    if (args.text) {
+      const outputDir = '/workspace/output';
+      try {
+        fs.mkdirSync(outputDir, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const msgFile = `sent-${ts}.md`;
+        fs.writeFileSync(path.join(outputDir, msgFile), args.text);
+      } catch {
+        // Non-critical — output capture is best-effort
+      }
+    }
+
     return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+  },
+);
+
+server.tool(
+  'save_output',
+  'Save a file to the run output. Use this to produce deliverables (posts, reports, briefs) that will be uploaded and shown on the run details page. Call once per deliverable with a descriptive filename.',
+  {
+    filename: z.string().describe('Descriptive filename with extension, e.g. "post-1-instagram.md", "market-brief.md", "campaign-report.pdf"'),
+    content: z.string().describe('The file content (text/markdown)'),
+  },
+  async (args) => {
+    const outputDir = '/workspace/output';
+    // Sanitize filename: strip path separators, keep it safe
+    const safeName = args.filename.replace(/[/\\]/g, '_').replace(/^\.+/, '');
+    if (!safeName) {
+      return { content: [{ type: 'text' as const, text: 'Error: invalid filename.' }], isError: true };
+    }
+    try {
+      fs.mkdirSync(outputDir, { recursive: true });
+      fs.writeFileSync(path.join(outputDir, safeName), args.content);
+      return { content: [{ type: 'text' as const, text: `Saved: ${safeName}` }] };
+    } catch (err) {
+      return { content: [{ type: 'text' as const, text: `Error saving file: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+    }
   },
 );
 
@@ -105,6 +143,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
 \u2022 interval: Milliseconds between runs (e.g., "300000" for 5 minutes, "3600000" for 1 hour)
 \u2022 once: Local time WITHOUT "Z" suffix (e.g., "2026-02-01T15:30:00"). Do NOT use UTC/Z suffix.`,
   {
+    name: z.string().describe('Short human-readable name for the task (e.g. "Daily Market Intel", "Weekly Social Posts"). Shown in dashboards and notifications.'),
     prompt: z.string().describe('What the agent should do when the task runs. For isolated mode, include all necessary context here.'),
     schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
     schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
@@ -154,6 +193,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     const data = {
       type: 'schedule_task',
       taskId,
+      name: args.name,
       prompt: args.prompt,
       schedule_type: args.schedule_type,
       schedule_value: args.schedule_value,

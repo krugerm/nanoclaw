@@ -370,6 +370,30 @@ async function runTask(
 
   const durationMs = Date.now() - startTime;
 
+  // Read any sent message copies from the output directory.
+  // The container's send_message tool saves text copies as sent-*.md files
+  // so we can capture the full output (not just the final summary).
+  const outputDir = path.join(DATA_DIR, 'sessions', task.group_folder, 'output');
+  if (fs.existsSync(outputDir)) {
+    const sentFiles = fs
+      .readdirSync(outputDir)
+      .filter((f) => f.startsWith('sent-') && f.endsWith('.md'))
+      .sort();
+    if (sentFiles.length > 0) {
+      const sentMessages: string[] = [];
+      for (const f of sentFiles) {
+        try {
+          const content = fs.readFileSync(path.join(outputDir, f), 'utf-8');
+          if (content.trim()) sentMessages.push(content);
+        } catch {}
+      }
+      if (sentMessages.length > 0) {
+        const fullOutput = sentMessages.join('\n\n---\n\n');
+        result = result ? `${fullOutput}\n\n---\n\n${result}` : fullOutput;
+      }
+    }
+  }
+
   const taskStatus = error ? 'error' : 'success';
 
   const runId = await logTaskRunReturningId({
@@ -381,14 +405,8 @@ async function runTask(
     error,
   });
 
-  // Save agent response as markdown file for upload
+  // Save full agent response as markdown file for upload
   if (result && runId) {
-    const outputDir = path.join(
-      DATA_DIR,
-      'sessions',
-      task.group_folder,
-      'output',
-    );
     fs.mkdirSync(outputDir, { recursive: true });
     const responseFile = path.join(outputDir, `response-${Date.now()}.md`);
     fs.writeFileSync(responseFile, result);
